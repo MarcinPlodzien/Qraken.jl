@@ -37,7 +37,9 @@ $$|i\rangle = |b_{N-1} \ldots b_1 b_0\rangle \quad \text{where } i = \sum_{k=0}^
 1. Compute partner index: $j = i \oplus 2^k$ (XOR flips bit $k$)
 2. Apply 2×2 gate matrix to the pair $(\psi_i, \psi_j)$:
 
-$$\begin{pmatrix} \psi'_i \\ \psi'_j \end{pmatrix} = \begin{pmatrix} u_{00} & u_{01} \\ u_{10} & u_{11} \end{pmatrix} \begin{pmatrix} \psi_i \\ \psi_j \end{pmatrix}$$
+$$\psi'_i = u_{00} \psi_i + u_{01} \psi_j$$
+
+$$\psi'_j = u_{10} \psi_i + u_{11} \psi_j$$
 
 **Concrete single-qubit gate examples:**
 
@@ -66,30 +68,23 @@ Each quartet undergoes a 4×4 transformation.
 
 **Explicit two-qubit rotation gates** (in basis $|00\rangle, |01\rangle, |10\rangle, |11\rangle$):
 
-$R_{zz}(\theta)$: **Diagonal** — phases based on bit parity
+**$R_{zz}(\theta)$: Diagonal** — phases based on bit parity (no amplitude mixing):
 
-$$R_{zz}(\theta) = \begin{pmatrix} e^{-i\theta/2} & 0 & 0 & 0 \\ 0 & e^{+i\theta/2} & 0 & 0 \\ 0 & 0 & e^{+i\theta/2} & 0 \\ 0 & 0 & 0 & e^{-i\theta/2} \end{pmatrix}$$
-
-**State vector action** (no amplitude mixing, just phases):
 $$\psi'_{00} = e^{-i\theta/2} \psi_{00}, \quad \psi'_{01} = e^{+i\theta/2} \psi_{01}, \quad \psi'_{10} = e^{+i\theta/2} \psi_{10}, \quad \psi'_{11} = e^{-i\theta/2} \psi_{11}$$
 
-$R_{xx}(\theta)$: **Couples** $|00\rangle \leftrightarrow |11\rangle$ and $|01\rangle \leftrightarrow |10\rangle$
+**$R_{xx}(\theta)$: Couples** $|00\rangle \leftrightarrow |11\rangle$ and $|01\rangle \leftrightarrow |10\rangle$:
 
-$$R_{xx}(\theta) = \begin{pmatrix} \cos\frac{\theta}{2} & 0 & 0 & -i\sin\frac{\theta}{2} \\ 0 & \cos\frac{\theta}{2} & -i\sin\frac{\theta}{2} & 0 \\ 0 & -i\sin\frac{\theta}{2} & \cos\frac{\theta}{2} & 0 \\ -i\sin\frac{\theta}{2} & 0 & 0 & \cos\frac{\theta}{2} \end{pmatrix}$$
-
-**State vector action** (amplitude mixing in pairs):
 $$\psi'_{00} = c\,\psi_{00} - is\,\psi_{11}, \quad \psi'_{11} = -is\,\psi_{00} + c\,\psi_{11}$$
+
+$$\psi'_{01} = c\,\psi_{01} - is\,\psi_{10}, \quad \psi'_{10} = -is\,\psi_{01} + c\,\psi_{10}$$
+
+**$R_{yy}(\theta)$: Similar** with sign difference on $(00,11)$ coupling:
+
+$$\psi'_{00} = c\,\psi_{00} + is\,\psi_{11}, \quad \psi'_{11} = is\,\psi_{00} + c\,\psi_{11}$$
+
 $$\psi'_{01} = c\,\psi_{01} - is\,\psi_{10}, \quad \psi'_{10} = -is\,\psi_{01} + c\,\psi_{10}$$
 
 where $c = \cos(\theta/2)$, $s = \sin(\theta/2)$.
-
-$R_{yy}(\theta)$: **Similar** with sign differences on $(00,11)$ coupling
-
-$$R_{yy}(\theta) = \begin{pmatrix} \cos\frac{\theta}{2} & 0 & 0 & +i\sin\frac{\theta}{2} \\ 0 & \cos\frac{\theta}{2} & -i\sin\frac{\theta}{2} & 0 \\ 0 & -i\sin\frac{\theta}{2} & \cos\frac{\theta}{2} & 0 \\ +i\sin\frac{\theta}{2} & 0 & 0 & \cos\frac{\theta}{2} \end{pmatrix}$$
-
-**State vector action:**
-$$\psi'_{00} = c\,\psi_{00} + is\,\psi_{11}, \quad \psi'_{11} = is\,\psi_{00} + c\,\psi_{11}$$
-$$\psi'_{01} = c\,\psi_{01} - is\,\psi_{10}, \quad \psi'_{10} = -is\,\psi_{01} + c\,\psi_{10}$$
 
 ### Bitwise Tricks for Observables
 
