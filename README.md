@@ -36,25 +36,75 @@ Correlator ⟨XX⟩:    Process amplitude quartets via XOR patterns
 
 ## Why GPU? Why MCWF?
 
-### Embarrassingly Parallel Quantum Simulation
+### Open Quantum Systems: Two Equivalent Descriptions
 
-Quantum state evolution is inherently parallelizable — each amplitude update is independent. Qraken.jl maps these operations to GPU threads:
+Simulations of open quantum systems — where a quantum system interacts with an environment — can be performed in two equivalent ways:
 
-- **2ᴺ amplitudes → 2ᴺ GPU threads**: Each thread handles its amplitude
-- **Bitwise operations**: Partner amplitudes identified via XOR
-- **Warp-level efficiency**: Contiguous memory access patterns for coalesced reads
+**1. Density Matrix + Lindblad Master Equation**
 
-### Monte Carlo Wave Function (MCWF) Scaling
+The system state is described by a density matrix ρ evolving under the Lindblad equation:
 
-For open quantum systems with noise, Qraken.jl uses **MCWF trajectories** instead of full density matrices:
+$$\frac{d\rho}{dt} = -i[H,\rho] + \sum_k \gamma_k \left( L_k \rho L_k^\dagger - \frac{1}{2}\{L_k^\dagger L_k, \rho\} \right)$$
 
-| Approach | Memory | GPU Parallelism |
-|----------|--------|-----------------|
+This is exact but requires O(4ᴺ) memory to store ρ, limiting simulations to ~13 qubits on typical hardware.
+
+**2. Monte Carlo Wave Function (MCWF)**
+
+An equivalent description uses stochastic pure-state trajectories with quantum jumps. Instead of evolving the full density matrix, we simulate individual "quantum trajectories" that sample the possible measurement outcomes of the environment.
+
+**Effective non-Hermitian Hamiltonian**
+
+The key idea is to incorporate dissipation via an imaginary term in the Hamiltonian:
+
+$$H_{\text{eff}} = H - \frac{i}{2} \sum_k \gamma_k L_k^\dagger L_k$$
+
+where:
+- H is the system Hamiltonian (coherent dynamics)
+- Lₖ are the Lindblad (jump) operators describing coupling to the environment
+- γₖ are the corresponding decay rates
+- The imaginary term −(i/2)∑ₖ γₖ Lₖ†Lₖ causes **non-unitary evolution** — the state norm decreases over time
+
+**Physical interpretation:** The norm decay encodes the probability that a quantum jump (e.g., spontaneous emission, decoherence event) has occurred. A state with lower norm is "more likely" to have experienced a jump.
+
+**Stochastic evolution algorithm:**
+
+At each time step dt:
+
+1. **Evolve under H_eff** (no normalization):
+
+$$|\tilde{\psi}(t+dt)\rangle = e^{-i H_{\text{eff}} \, dt} |\psi(t)\rangle$$
+
+2. **Compute no-jump probability** from the squared norm:
+
+$$p_{\text{no-jump}} = \langle\tilde{\psi}(t+dt)|\tilde{\psi}(t+dt)\rangle = 1 - dt \sum_k \gamma_k \langle\psi|L_k^\dagger L_k|\psi\rangle + O(dt^2)$$
+
+3. **Monte Carlo decision** — draw random r ∈ [0,1]:
+   - **No jump** (r < p_no-jump): Normalize the state and continue:
+   
+$$|\psi(t+dt)\rangle = \frac{|\tilde{\psi}(t+dt)\rangle}{\||\tilde{\psi}(t+dt)\rangle\|}$$
+   
+   - **Jump occurs** (r ≥ p_no-jump): Apply jump operator Lₖ with probability ∝ γₖ⟨ψ|Lₖ†Lₖ|ψ⟩, then normalize:
+   
+$$|\psi(t+dt)\rangle = \frac{L_k|\psi(t)\rangle}{\|L_k|\psi(t)\rangle\|}$$
+
+4. **Repeat** for each time step in the trajectory
+
+**Example:** For spontaneous emission of a two-level atom, L = σ⁻ = |g⟩⟨e| is the lowering operator. A quantum jump corresponds to detecting an emitted photon, collapsing the atom to the ground state.
+
+**Ensemble average:** The density matrix is recovered by averaging over many independent trajectories:
+$$\rho(t) = \lim_{K\to\infty} \frac{1}{K} \sum_{j=1}^{K} |\psi_j(t)\rangle\langle\psi_j(t)|$$
+
+### GPU Parallelism via Independent Trajectories
+
+The key insight: **individual MCWF trajectories are independent**. This enables natural GPU parallelization:
+
+| Approach | Memory | Parallelism |
+|----------|--------|-------------|
 | Density Matrix | O(4ᴺ) ≈ 16 TB for N=26 | Limited — matrix too large |
-| **MCWF Trajectory** | O(2ᴺ) ≈ 1 GB for N=26 | Pure state fits in GPU memory |
-| **Ensemble of Trajectories** | O(K × 2ᴺ) | Naturally parallel — K trajectories on K GPUs or batched |
+| Single MCWF Trajectory | O(2ᴺ) ≈ 1 GB for N=26 | Pure state fits in GPU memory |
+| **K Trajectories** | O(K × 2ᴺ) | **Embarrassingly parallel** — run K trajectories independently |
 
-MCWF enables simulation of **dissipative dynamics at pure-state memory cost**, making it well-suited for GPU acceleration.
+Qraken.jl exploits this by running many MCWF trajectories in parallel on GPU, enabling simulation of **dissipative dynamics at pure-state memory cost per trajectory**.
 
 ---
 
@@ -62,7 +112,7 @@ MCWF enables simulation of **dissipative dynamics at pure-state memory cost**, m
 
 | Feature | Description |
 |---------|-------------|
-| **GPU State Vectors** | CuArrays for 2ᴺ complex amplitudes with automatic device management |
+| **GPU State Vectors** | State vectors (2ᴺ complex amplitudes) stored and evolved on GPU |
 | **Bitwise Gate Kernels** | Custom CUDA kernels for Rx, Ry, Rz, H, CNOT, CZ — no matrices |
 | **GPU Observables** | Parallel reduction for ⟨X⟩, ⟨Y⟩, ⟨Z⟩, ⟨XX⟩, ⟨ZZ⟩, etc. |
 | **MCWF on GPU** | Stochastic quantum jumps with per-trajectory random states |
