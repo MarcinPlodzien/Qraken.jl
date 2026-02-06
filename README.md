@@ -39,9 +39,57 @@ $$|i\rangle = |b_{N-1} \ldots b_1 b_0\rangle \quad \text{where } i = \sum_{k=0}^
 
 $$\begin{pmatrix} \psi'_i \\ \psi'_j \end{pmatrix} = \begin{pmatrix} u_{00} & u_{01} \\ u_{10} & u_{11} \end{pmatrix} \begin{pmatrix} \psi_i \\ \psi_j \end{pmatrix}$$
 
+**Concrete single-qubit gate examples:**
+
+| Gate | Matrix $(u_{00}, u_{01}, u_{10}, u_{11})$ | Action on $(\psi_i, \psi_j)$ |
+|------|------------------------------------------|------------------------------|
+| $R_x(\theta)$ | $(\cos\frac{\theta}{2}, -i\sin\frac{\theta}{2}, -i\sin\frac{\theta}{2}, \cos\frac{\theta}{2})$ | Mix with phase |
+| $R_y(\theta)$ | $(\cos\frac{\theta}{2}, -\sin\frac{\theta}{2}, \sin\frac{\theta}{2}, \cos\frac{\theta}{2})$ | Real rotation |
+| $R_z(\theta)$ | $(e^{-i\theta/2}, 0, 0, e^{i\theta/2})$ | Phase only (no mixing) |
+| $H$ | $\frac{1}{\sqrt{2}}(1, 1, 1, -1)$ | Superposition |
+| $X$ | $(0, 1, 1, 0)$ | Swap $\psi_i \leftrightarrow \psi_j$ |
+
 No $2^N \times 2^N$ matrix is ever constructed — just $2^{N-1}$ independent 2×2 operations.
 
-**Two-qubit gate on qubits $k, l$:** Similarly, indices are grouped into quartets differing in bits $k$ and $l$. Each quartet undergoes a 4×4 transformation.
+**Two-qubit gate on qubits $k, l$:** Indices are grouped into quartets $(i_{00}, i_{01}, i_{10}, i_{11})$ differing in bits $k$ and $l$:
+
+$$i_{ab} = i_{00} \oplus a \cdot 2^k \oplus b \cdot 2^l$$
+
+Each quartet undergoes a 4×4 transformation.
+
+**Concrete two-qubit gate examples:**
+
+| Gate | Action |
+|------|--------|
+| **CZ** | Diagonal: $\psi_{i_{11}} \to -\psi_{i_{11}}$, others unchanged |
+| **CNOT** (control $k$, target $l$) | If bit $k$ is 1, swap $\psi_{i_{10}} \leftrightarrow \psi_{i_{11}}$ |
+
+**Explicit two-qubit rotation gates** (in basis $|00\rangle, |01\rangle, |10\rangle, |11\rangle$):
+
+$R_{zz}(\theta)$: **Diagonal** — phases based on bit parity
+
+$$R_{zz}(\theta) = \begin{pmatrix} e^{-i\theta/2} & 0 & 0 & 0 \\ 0 & e^{+i\theta/2} & 0 & 0 \\ 0 & 0 & e^{+i\theta/2} & 0 \\ 0 & 0 & 0 & e^{-i\theta/2} \end{pmatrix}$$
+
+**State vector action** (no amplitude mixing, just phases):
+$$\psi'_{00} = e^{-i\theta/2} \psi_{00}, \quad \psi'_{01} = e^{+i\theta/2} \psi_{01}, \quad \psi'_{10} = e^{+i\theta/2} \psi_{10}, \quad \psi'_{11} = e^{-i\theta/2} \psi_{11}$$
+
+$R_{xx}(\theta)$: **Couples** $|00\rangle \leftrightarrow |11\rangle$ and $|01\rangle \leftrightarrow |10\rangle$
+
+$$R_{xx}(\theta) = \begin{pmatrix} \cos\frac{\theta}{2} & 0 & 0 & -i\sin\frac{\theta}{2} \\ 0 & \cos\frac{\theta}{2} & -i\sin\frac{\theta}{2} & 0 \\ 0 & -i\sin\frac{\theta}{2} & \cos\frac{\theta}{2} & 0 \\ -i\sin\frac{\theta}{2} & 0 & 0 & \cos\frac{\theta}{2} \end{pmatrix}$$
+
+**State vector action** (amplitude mixing in pairs):
+$$\psi'_{00} = c\,\psi_{00} - is\,\psi_{11}, \quad \psi'_{11} = -is\,\psi_{00} + c\,\psi_{11}$$
+$$\psi'_{01} = c\,\psi_{01} - is\,\psi_{10}, \quad \psi'_{10} = -is\,\psi_{01} + c\,\psi_{10}$$
+
+where $c = \cos(\theta/2)$, $s = \sin(\theta/2)$.
+
+$R_{yy}(\theta)$: **Similar** with sign differences on $(00,11)$ coupling
+
+$$R_{yy}(\theta) = \begin{pmatrix} \cos\frac{\theta}{2} & 0 & 0 & +i\sin\frac{\theta}{2} \\ 0 & \cos\frac{\theta}{2} & -i\sin\frac{\theta}{2} & 0 \\ 0 & -i\sin\frac{\theta}{2} & \cos\frac{\theta}{2} & 0 \\ +i\sin\frac{\theta}{2} & 0 & 0 & \cos\frac{\theta}{2} \end{pmatrix}$$
+
+**State vector action:**
+$$\psi'_{00} = c\,\psi_{00} + is\,\psi_{11}, \quad \psi'_{11} = is\,\psi_{00} + c\,\psi_{11}$$
+$$\psi'_{01} = c\,\psi_{01} - is\,\psi_{10}, \quad \psi'_{10} = -is\,\psi_{01} + c\,\psi_{10}$$
 
 ### Bitwise Tricks for Observables
 
@@ -80,12 +128,49 @@ For a Hamiltonian with local terms $H = \sum_j H_j$ (e.g., nearest-neighbor inte
 
 $$e^{-iHt} \approx \left( \prod_j e^{-i H_j \cdot dt} \right)^{t/dt} + O(dt)$$
 
-Each $e^{-i H_j \cdot dt}$ acts on only 1–2 qubits, so it can be applied using the bitwise gate tricks above. For example:
-- $e^{-i\theta Z_k}$: phase rotation, diagonal, applied via bit extraction
-- $e^{-i\theta Z_k Z_l}$: two-qubit phase, still diagonal
-- $e^{-i\theta X_k X_l}$: couples quartets of amplitudes via XOR
+Each $e^{-i H_j \cdot dt}$ acts on only 1–2 qubits, so it can be applied using the bitwise gate tricks above.
 
-A single Trotter step applies $O(N)$ local gates. The full evolution requires no large matrix — just repeated small operations.
+**Trotter step algorithm (matrix-free):**
+
+1. **Precompute local unitaries:** For each local term $H_j$, compute $U_j = e^{-i H_j \cdot dt}$ as a small 2×2 or 4×4 matrix. Store as `(qubit_indices, U_matrix)` pairs.
+
+2. **Apply gates sequentially:** For each gate in the list:
+   - **1-qubit gate on qubit $k$:** Loop over indices with bit $k = 0$, apply 2×2 to amplitude pairs
+   - **2-qubit gate on qubits $k, l$:** Loop over indices with bits $k = l = 0$, apply 4×4 to quartets
+
+**Pseudocode for one Trotter step:**
+```
+for gate in gates:
+    if gate is 1-qubit on k:
+        step = 2^k
+        for i in 0..2^N-1 where bit_k(i) == 0:
+            j = i + step
+            (ψ[i], ψ[j]) ← U × (ψ[i], ψ[j])
+    
+    if gate is 2-qubit on (k, l):
+        step_k, step_l = 2^k, 2^l
+        for i in 0..2^N-1 where bit_k(i) == bit_l(i) == 0:
+            i00, i01, i10, i11 = i, i+step_k, i+step_l, i+step_k+step_l
+            (ψ[i00], ψ[i01], ψ[i10], ψ[i11]) ← U × (ψ[i00], ψ[i01], ψ[i10], ψ[i11])
+```
+
+**Example: Heisenberg model** $H = \sum_{\langle i,j \rangle} (J_x X_i X_j + J_y Y_i Y_j + J_z Z_i Z_j)$
+
+Each bond $\langle i,j \rangle$ has local Hamiltonian $H_{ij} = J_x X_i X_j + J_y Y_i Y_j + J_z Z_i Z_j$. Note that XX, YY, ZZ **do not commute**, but this is handled by computing the **exact 4×4 matrix exponential**:
+
+$$U_{ij} = e^{-i H_{ij} \cdot dt} = \exp\left(-i(J_x XX + J_y YY + J_z ZZ) \cdot dt\right)$$
+
+This 4×4 exponential is computed exactly (cheap for a small matrix) and then applied bitwisely. The **Trotter error** arises from non-commutativity between **different bonds** (e.g., $[H_{12}, H_{23}] \neq 0$), not from within a single bond.
+
+**Complexity comparison:**
+
+| Method | Operations per step |
+|--------|---------------------|
+| Matrix exponentiation | $O(2^{3N})$ to compute $e^{-iHdt}$ |
+| Matrix-vector multiply | $O(4^N)$ per step |
+| **Bitwise Trotter** | $O(G \cdot 2^N)$ where $G = O(N)$ gates |
+
+For $N = 26$ with $G \sim 50$ gates: Trotter is $\sim 10^7 \times$ cheaper than matrix methods.
 
 ### Bitwise Partial Trace
 
@@ -257,6 +342,21 @@ apply_mcwf_step_gpu!(ψ, jump_operators, dt, rng)
 <p align="center">
   <img src="assets/Qraken.jl_logo_desktop.png" alt="Qraken.jl" width="600">
 </p>
+
+---
+
+## References
+
+The Monte Carlo Wave Function method implemented in Qraken.jl is based on foundational work in quantum optics:
+
+1. **Dalibard, Castin, Mølmer (1992)** — *Wave-function approach to dissipative processes in quantum optics*  
+   Physical Review Letters 68, 580. [DOI: 10.1103/PhysRevLett.68.580](https://doi.org/10.1103/PhysRevLett.68.580)
+
+2. **Mølmer, Castin, Dalibard (1993)** — *Monte Carlo wave-function method in quantum optics*  
+   Journal of the Optical Society of America B 10, 524. [DOI: 10.1364/JOSAB.10.000524](https://doi.org/10.1364/JOSAB.10.000524)
+
+3. **Carmichael (1993)** — *An Open Systems Approach to Quantum Optics*  
+   Springer-Verlag, Lecture Notes in Physics. [DOI: 10.1007/978-3-540-47620-7](https://doi.org/10.1007/978-3-540-47620-7)
 
 ---
 
