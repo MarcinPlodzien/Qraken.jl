@@ -26,11 +26,83 @@ Traditional quantum simulators construct large matrices (gates, Hamiltonians, ob
 | Store O(4ᴺ) elements for density matrices | **MCWF trajectories** at O(2ᴺ) memory per trajectory |
 | Sequential matrix-vector products | **GPU-parallel** amplitude updates across millions of threads |
 
-```
-Gate on qubit k:    Flip bit k in index → mix amplitude pairs in parallel
-Observable ⟨Z⟩:     GPU reduction over |ψᵢ|² weighted by parity(bit_k)
-Correlator ⟨XX⟩:    Process amplitude quartets via XOR patterns
-```
+### Bitwise Tricks for Gates
+
+In the computational basis, each basis state $|i\rangle$ is labeled by an integer $i \in \{0, 1, \ldots, 2^N-1\}$. The binary representation of $i$ encodes which qubits are in state $|0\rangle$ or $|1\rangle$:
+
+$$|i\rangle = |b_{N-1} \ldots b_1 b_0\rangle \quad \text{where } i = \sum_{k=0}^{N-1} b_k \cdot 2^k$$
+
+**Single-qubit gate on qubit $k$:** A gate acting on qubit $k$ couples amplitude pairs whose indices differ only in bit $k$. For each index $i$:
+
+1. Compute partner index: $j = i \oplus 2^k$ (XOR flips bit $k$)
+2. Apply 2×2 gate matrix to the pair $(\psi_i, \psi_j)$:
+
+$$\begin{pmatrix} \psi'_i \\ \psi'_j \end{pmatrix} = \begin{pmatrix} u_{00} & u_{01} \\ u_{10} & u_{11} \end{pmatrix} \begin{pmatrix} \psi_i \\ \psi_j \end{pmatrix}$$
+
+No $2^N \times 2^N$ matrix is ever constructed — just $2^{N-1}$ independent 2×2 operations.
+
+**Two-qubit gate on qubits $k, l$:** Similarly, indices are grouped into quartets differing in bits $k$ and $l$. Each quartet undergoes a 4×4 transformation.
+
+### Bitwise Tricks for Observables
+
+**Single-qubit $\langle Z_k \rangle$:** The Pauli-Z operator is diagonal: $Z|b\rangle = (-1)^b|b\rangle$. The expectation value becomes:
+
+$$\langle Z_k \rangle = \sum_{i=0}^{2^N-1} (-1)^{b_k(i)} |\psi_i|^2$$
+
+where $b_k(i) = (i \gg k) \land 1$ extracts bit $k$ from index $i$. This is a weighted sum over probabilities — no matrix needed.
+
+**Two-qubit $\langle Z_k Z_l \rangle$:** The parity of two bits determines the sign:
+
+$$\langle Z_k Z_l \rangle = \sum_{i=0}^{2^N-1} (-1)^{b_k(i) \oplus b_l(i)} |\psi_i|^2$$
+
+**Non-diagonal observables $\langle X_k \rangle$, $\langle Y_k \rangle$:** These couple amplitude pairs (like gates). For $\langle X_k \rangle$:
+
+$$\langle X_k \rangle = \sum_{i: b_k(i)=0} 2 \cdot \text{Re}(\psi_i^* \psi_{i \oplus 2^k})$$
+
+Each term involves a pair of amplitudes related by XOR — again, no matrix construction.
+
+**Arbitrary Pauli string $P = \sigma_1 \otimes \sigma_2 \otimes \cdots \otimes \sigma_N$:** For a general Pauli string (e.g., $XZIY$), partition qubits into sets:
+- $S_Z$: qubits with $Z$ (diagonal, contribute sign via bit parity)
+- $S_X$: qubits with $X$ (flip bits, couple amplitude pairs)
+- $S_Y$: qubits with $Y$ (flip bits + phase factor $i$)
+
+Define the flip mask $m = \sum_{k \in S_X \cup S_Y} 2^k$. For Z-only strings ($S_X = S_Y = \emptyset$):
+
+$$\langle P \rangle = \sum_i (-1)^{\bigoplus_{k \in S_Z} b_k(i)} |\psi_i|^2$$
+
+For strings with X or Y, amplitudes are coupled in pairs/groups determined by the flip mask $m$, with phases from Y operators.
+
+### Time Evolution via Trotterization
+
+For Hamiltonian evolution $|\psi(t)\rangle = e^{-iHt}|\psi(0)\rangle$, constructing the full $2^N \times 2^N$ matrix $e^{-iHt}$ is impractical. Instead, we use **Trotter decomposition**.
+
+For a Hamiltonian with local terms $H = \sum_j H_j$ (e.g., nearest-neighbor interactions):
+
+$$e^{-iHt} \approx \left( \prod_j e^{-i H_j \cdot dt} \right)^{t/dt} + O(dt)$$
+
+Each $e^{-i H_j \cdot dt}$ acts on only 1–2 qubits, so it can be applied using the bitwise gate tricks above. For example:
+- $e^{-i\theta Z_k}$: phase rotation, diagonal, applied via bit extraction
+- $e^{-i\theta Z_k Z_l}$: two-qubit phase, still diagonal
+- $e^{-i\theta X_k X_l}$: couples quartets of amplitudes via XOR
+
+A single Trotter step applies $O(N)$ local gates. The full evolution requires no large matrix — just repeated small operations.
+
+### Bitwise Partial Trace
+
+To compute the reduced density matrix $\rho_A = \text{Tr}_B(|\psi\rangle\langle\psi|)$ for subsystem $A$ (tracing out $B$), we use index bit masking.
+
+Let $A$ contain $n_A$ qubits and $B$ contain $n_B = N - n_A$ qubits. For each pair of indices $(i_A, j_A)$ in the reduced space:
+
+$$(\rho_A)_{i_A, j_A} = \sum_{i_B} \psi^*_{\text{idx}(i_A, i_B)} \cdot \psi_{\text{idx}(j_A, i_B)}$$
+
+where $\text{idx}(i_A, i_B)$ reconstructs the full index from subsystem indices using bit interleaving based on the qubit partition.
+
+**Key operations:**
+- Extract subsystem bits via masks: `i_A = (i >> shift_A) & mask_A`
+- Reconstruct full index: bit interleaving of $i_A$ and $i_B$
+- Sum over traced-out indices $i_B$: $2^{n_B}$ terms per matrix element
+
+This avoids constructing the full $\rho = |\psi\rangle\langle\psi|$ and directly computes the $2^{n_A} \times 2^{n_A}$ reduced matrix.
 
 ---
 
@@ -59,52 +131,66 @@ The key idea is to incorporate dissipation via an imaginary term in the Hamilton
 $$H_{\text{eff}} = H - \frac{i}{2} \sum_k \gamma_k L_k^\dagger L_k$$
 
 where:
-- H is the system Hamiltonian (coherent dynamics)
-- Lₖ are the Lindblad (jump) operators describing coupling to the environment
-- γₖ are the corresponding decay rates
-- The imaginary term −(i/2)∑ₖ γₖ Lₖ†Lₖ causes **non-unitary evolution** — the state norm decreases over time
+- $H$ is the system Hamiltonian (coherent dynamics)
+- $L_k$ are the Lindblad (jump) operators describing coupling to the environment
+- $\gamma_k$ are the corresponding decay rates
+- The imaginary term $-\frac{i}{2}\sum_k \gamma_k L_k^\dagger L_k$ causes **non-unitary evolution** — the state norm decreases over time
 
 **Physical interpretation:** The norm decay encodes the probability that a quantum jump (e.g., spontaneous emission, decoherence event) has occurred. A state with lower norm is "more likely" to have experienced a jump.
 
 **Stochastic evolution algorithm:**
 
-At each time step dt:
+At each time step $dt$:
 
-1. **Evolve under H_eff** (no normalization):
+**Step 1: Evolve under $H_{\text{eff}}$** (no normalization)
 
 $$|\tilde{\psi}(t+dt)\rangle = e^{-i H_{\text{eff}} \, dt} |\psi(t)\rangle$$
 
-2. **Compute no-jump probability** from the squared norm:
+**Step 2: Compute no-jump probability** from the squared norm
 
 $$p_{\text{no-jump}} = \langle\tilde{\psi}(t+dt)|\tilde{\psi}(t+dt)\rangle = 1 - dt \sum_k \gamma_k \langle\psi|L_k^\dagger L_k|\psi\rangle + O(dt^2)$$
 
-3. **Monte Carlo decision** — draw random r ∈ [0,1]:
-   - **No jump** (r < p_no-jump): Normalize the state and continue:
-   
+**Step 3: Monte Carlo decision** — draw random $r \in [0,1]$
+
+- If $r < p_{\text{no-jump}}$ (**no jump**): Normalize and continue
+
 $$|\psi(t+dt)\rangle = \frac{|\tilde{\psi}(t+dt)\rangle}{\||\tilde{\psi}(t+dt)\rangle\|}$$
-   
-   - **Jump occurs** (r ≥ p_no-jump): Apply jump operator Lₖ with probability ∝ γₖ⟨ψ|Lₖ†Lₖ|ψ⟩, then normalize:
-   
+
+- If $r \geq p_{\text{no-jump}}$ (**jump occurs**): Apply $L_k$ with probability $\propto \gamma_k\langle\psi|L_k^\dagger L_k|\psi\rangle$
+
 $$|\psi(t+dt)\rangle = \frac{L_k|\psi(t)\rangle}{\|L_k|\psi(t)\rangle\|}$$
 
-4. **Repeat** for each time step in the trajectory
+**Step 4: Repeat** for each time step in the trajectory
 
-**Example:** For spontaneous emission of a two-level atom, L = σ⁻ = |g⟩⟨e| is the lowering operator. A quantum jump corresponds to detecting an emitted photon, collapsing the atom to the ground state.
+**Example:** For spontaneous emission of a two-level atom, $L = \sigma^- = |g\rangle\langle e|$ is the lowering operator. A quantum jump corresponds to detecting an emitted photon, collapsing the atom to the ground state.
 
 **Ensemble average:** The density matrix is recovered by averaging over many independent trajectories:
+
 $$\rho(t) = \lim_{K\to\infty} \frac{1}{K} \sum_{j=1}^{K} |\psi_j(t)\rangle\langle\psi_j(t)|$$
+
+**Observable estimation:** For any observable $O$, we estimate its expectation value by averaging over trajectories:
+
+$$\langle O \rangle = \frac{1}{K} \sum_{j=1}^{K} \langle\psi_j|O|\psi_j\rangle$$
+
+**Statistical error:** The standard error of the estimate scales as:
+
+$$\sigma_{\langle O \rangle} = \frac{\sigma}{\sqrt{K}}$$
+
+where $\sigma$ is the standard deviation of single-trajectory measurements. This $1/\sqrt{K}$ scaling means that doubling precision requires 4× more trajectories — a cost that GPU parallelism can efficiently handle.
 
 ### GPU Parallelism via Independent Trajectories
 
 The key insight: **individual MCWF trajectories are independent**. This enables natural GPU parallelization:
 
-| Approach | Memory | Parallelism |
-|----------|--------|-------------|
-| Density Matrix | O(4ᴺ) ≈ 16 TB for N=26 | Limited — matrix too large |
-| Single MCWF Trajectory | O(2ᴺ) ≈ 1 GB for N=26 | Pure state fits in GPU memory |
-| **K Trajectories** | O(K × 2ᴺ) | **Embarrassingly parallel** — run K trajectories independently |
+| Approach | Memory scaling | 1 GB budget |
+|----------|----------------|-------------|
+| Density Matrix | O(4ᴺ) | N ≈ 13 qubits |
+| MCWF Trajectory | O(2ᴺ) | **N ≈ 26 qubits** |
+| K Trajectories | O(K × 2ᴺ) | Embarrassingly parallel |
 
 Qraken.jl exploits this by running many MCWF trajectories in parallel on GPU, enabling simulation of **dissipative dynamics at pure-state memory cost per trajectory**.
+
+This approach allows simulation of much larger systems compared to full density matrix evolution. While density matrices are limited to ~13 qubits on typical hardware, MCWF enables exact simulation of noisy quantum circuits for **N = 24–26 qubits**.
 
 ---
 
