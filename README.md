@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/Qraken.jl_logo.png" alt="Qraken.jl Logo" width="300">
+  <img src="assets/Qraken.jl_logo_desktop.png" alt="Qraken.jl Logo" width="300">
 </p>
 
 <p align="center">
